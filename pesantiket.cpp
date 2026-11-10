@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <climits>
+#include <functional>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <queue>
 #include <sstream>
@@ -10,6 +12,7 @@
 
 using namespace std;
 
+typedef long long ll;
 
 struct Flight {
     string kode;       // kode penerbangan
@@ -18,7 +21,7 @@ struct Flight {
     string tujuan;     // kode kota tujuan
     int berangkat;     // menit sejak 00:00
     int durasi;        // menit
-    long harga;        // rupiah
+    ll harga;          // rupiah
 };
 
 string jam(int menit) {
@@ -28,7 +31,7 @@ string jam(int menit) {
     return os.str();
 }
 
-string rupiah(long v) {
+string rupiah(ll v) {
     string s = to_string(v), out;
     int c = 0;
     for (int i = (int)s.size() - 1; i >= 0; --i) {
@@ -40,15 +43,15 @@ string rupiah(long v) {
 
 void cetakHeader() {
     cout << left << setw(8) << "Kode" << setw(14) << "Maskapai" << setw(6) << "Asal"
-            << setw(8) << "Tujuan" << setw(11) << "Berangkat" << setw(8) << "Durasi"
-            << "Harga\n"
-            << string(66, '-') << "\n";
+         << setw(8) << "Tujuan" << setw(11) << "Berangkat" << setw(8) << "Durasi"
+         << "Harga\n"
+         << string(66, '-') << "\n";
 }
 
 void cetakFlight(const Flight& f) {
     cout << left << setw(8) << f.kode << setw(14) << f.maskapai << setw(6) << f.asal
-            << setw(8) << f.tujuan << setw(11) << jam(f.berangkat)
-            << setw(8) << (to_string(f.durasi) + "m") << rupiah(f.harga) << "\n";
+         << setw(8) << f.tujuan << setw(11) << jam(f.berangkat)
+         << setw(8) << (to_string(f.durasi) + "m") << rupiah(f.harga) << "\n";
 }
 
 void cetakDaftar(const vector<Flight>& v) {
@@ -93,7 +96,8 @@ void urutkan(vector<Flight>& a, int kriteria) {
 
 // ------------------------ SEARCHING -------------------------
 string upper(string s) {
-    transform(s.begin(), s.end(), s.begin(), ::toupper);
+    transform(s.begin(), s.end(), s.begin(),
+              [](unsigned char c) { return (char)toupper(c); });
     return s;
 }
 
@@ -122,7 +126,7 @@ int binarySearchKode(const vector<Flight>& terurut, const string& kode) {
 // Node = kota, Edge = penerbangan (berarah, berbobot harga)
 class JaringanRute {
 public:
-    struct Edge { int ke; long biaya; int idx; };  // idx = indeks flight di data
+    struct Edge { int ke; ll biaya; int idx; };  // idx = indeks flight di data
 
     void bangun(const vector<Flight>& data) {
         kota.clear(); id.clear(); adj.clear();
@@ -136,15 +140,23 @@ public:
 
     // Dijkstra: rute dengan biaya total minimum. O((V+E) log V)
     // Mengembalikan daftar indeks penerbangan yang dilalui, total biaya lewat parameter.
-    vector<int> termurah(const string& asal, const string& tujuan, long& total) const {
-        int n = (int)kota.size(), s = id.at(asal), t = id.at(tujuan);
-        vector<long> dist(n, LLONG_MAX);
+    vector<int> termurah(const string& asal, const string& tujuan, ll& total) const {
+        total = 0;
+        vector<int> jalur;
+        auto its = id.find(asal), itt = id.find(tujuan);
+        if (its == id.end() || itt == id.end()) return jalur;
+
+        int n = (int)kota.size(), s = its->second, t = itt->second;
+        const ll INF = LLONG_MAX;
+        vector<ll> dist(n, INF);
         vector<int> prevNode(n, -1), prevFlight(n, -1);
-        priority_queue<pair<long, int>, vector<pair<long, int>>, greater<>> pq;
+        priority_queue<pair<ll, int>, vector<pair<ll, int>>, greater<pair<ll, int>>> pq;
         dist[s] = 0;
         pq.push({0, s});
         while (!pq.empty()) {
-            auto [d, u] = pq.top(); pq.pop();
+            pair<ll, int> top = pq.top(); pq.pop();
+            ll d = top.first;
+            int u = top.second;
             if (d > dist[u]) continue;
             for (const auto& e : adj[u]) {
                 if (dist[u] + e.biaya < dist[e.ke]) {
@@ -155,17 +167,23 @@ public:
                 }
             }
         }
+        if (dist[t] == INF) return jalur;
         total = dist[t];
-        vector<int> jalur;
-        if (dist[t] == LLONG_MAX) return jalur;
-        for (int v = t; v != s; v = prevNode[v]) jalur.push_back(prevFlight[v]);
+        for (int v = t; v != s; v = prevNode[v]) {
+            if (prevNode[v] < 0) { jalur.clear(); return jalur; }  // pengaman
+            jalur.push_back(prevFlight[v]);
+        }
         reverse(jalur.begin(), jalur.end());
         return jalur;
     }
 
     // BFS: rute dengan jumlah transit paling sedikit. O(V+E)
     vector<int> transitTerkecil(const string& asal, const string& tujuan) const {
-        int n = (int)kota.size(), s = id.at(asal), t = id.at(tujuan);
+        vector<int> jalur;
+        auto its = id.find(asal), itt = id.find(tujuan);
+        if (its == id.end() || itt == id.end()) return jalur;
+
+        int n = (int)kota.size(), s = its->second, t = itt->second;
         vector<int> prevNode(n, -1), prevFlight(n, -1);
         vector<bool> vis(n, false);
         queue<int> q;
@@ -181,9 +199,11 @@ public:
                 }
             }
         }
-        vector<int> jalur;
         if (!vis[t]) return jalur;
-        for (int v = t; v != s; v = prevNode[v]) jalur.push_back(prevFlight[v]);
+        for (int v = t; v != s; v = prevNode[v]) {
+            if (prevNode[v] < 0) { jalur.clear(); return jalur; }  // pengaman
+            jalur.push_back(prevFlight[v]);
+        }
         reverse(jalur.begin(), jalur.end());
         return jalur;
     }
@@ -197,6 +217,7 @@ public:
                 string nama = kota[e.ke];
                 if (find(tujuan.begin(), tujuan.end(), nama) == tujuan.end()) tujuan.push_back(nama);
             }
+            if (tujuan.empty()) cout << "(tidak ada)";
             for (size_t i = 0; i < tujuan.size(); ++i) cout << tujuan[i] << (i + 1 < tujuan.size() ? ", " : "");
             cout << "\n";
         }
@@ -210,9 +231,10 @@ private:
     int ambilId(const string& k) {
         auto it = id.find(k);
         if (it != id.end()) return it->second;
-        id[k] = (int)kota.size();
+        int baru = (int)kota.size();
+        id[k] = baru;
         kota.push_back(k);
-        return id[k];
+        return baru;
     }
 };
 
@@ -220,31 +242,31 @@ private:
 vector<Flight> buatData() {
     auto M = [](int h, int m) { return h * 60 + m; };
     return {
-        {"GA101", "Garuda",     "PKU", "CGK", M(6, 0),  100, 1250000},
-        {"JT202", "Lion Air",   "PKU", "CGK", M(9, 30), 105,  890000},
-        {"QG303", "Citilink",   "PKU", "CGK", M(14, 15), 100, 780000},
-        {"ID404", "Batik Air",  "PKU", "KNO", M(7, 45),  75,  850000},
-        {"JT505", "Lion Air",   "PKU", "BTH", M(11, 0),  60,  620000},
-        {"GA606", "Garuda",     "CGK", "DPS", M(8, 0),  165, 1450000},
-        {"QG707", "Citilink",   "CGK", "DPS", M(13, 20), 165, 1050000},
-        {"JT808", "Lion Air",   "CGK", "SUB", M(10, 10), 100,  720000},
-        {"GA909", "Garuda",     "CGK", "UPG", M(6, 50), 150, 1600000},
-        {"ID110", "Batik Air",  "KNO", "CGK", M(12, 30), 150,  980000},
-        {"JT211", "Lion Air",   "KNO", "BTH", M(15, 0),   90,  700000},
-        {"QG312", "Citilink",   "BTH", "CGK", M(16, 40), 110,  760000},
-        {"JT413", "Lion Air",   "BTH", "SUB", M(7, 15), 135,  950000},
-        {"GA514", "Garuda",     "SUB", "DPS", M(9, 0),   65,  650000},
-        {"QG615", "Citilink",   "SUB", "UPG", M(11, 45), 105,  870000},
-        {"JT716", "Lion Air",   "UPG", "DPS", M(17, 30), 100,  830000},
-        {"ID817", "Batik Air",  "DPS", "UPG", M(8, 20), 100,  900000},
-        {"GA918", "Garuda",     "DPS", "CGK", M(19, 0), 170, 1300000},
+        {"GA101", "Garuda",     "PKU", "CGK", M(6, 0),  100, 1250000LL},
+        {"JT202", "Lion Air",   "PKU", "CGK", M(9, 30), 105,  890000LL},
+        {"QG303", "Citilink",   "PKU", "CGK", M(14, 15), 100, 780000LL},
+        {"ID404", "Batik Air",  "PKU", "KNO", M(7, 45),  75,  850000LL},
+        {"JT505", "Lion Air",   "PKU", "BTH", M(11, 0),  60,  620000LL},
+        {"GA606", "Garuda",     "CGK", "DPS", M(8, 0),  165, 1450000LL},
+        {"QG707", "Citilink",   "CGK", "DPS", M(13, 20), 165, 1050000LL},
+        {"JT808", "Lion Air",   "CGK", "SUB", M(10, 10), 100,  720000LL},
+        {"GA909", "Garuda",     "CGK", "UPG", M(6, 50), 150, 1600000LL},
+        {"ID110", "Batik Air",  "KNO", "CGK", M(12, 30), 150,  980000LL},
+        {"JT211", "Lion Air",   "KNO", "BTH", M(15, 0),   90,  700000LL},
+        {"QG312", "Citilink",   "BTH", "CGK", M(16, 40), 110,  760000LL},
+        {"JT413", "Lion Air",   "BTH", "SUB", M(7, 15), 135,  950000LL},
+        {"GA514", "Garuda",     "SUB", "DPS", M(9, 0),   65,  650000LL},
+        {"QG615", "Citilink",   "SUB", "UPG", M(11, 45), 105,  870000LL},
+        {"JT716", "Lion Air",   "UPG", "DPS", M(17, 30), 100,  830000LL},
+        {"ID817", "Batik Air",  "DPS", "UPG", M(8, 20), 100,  900000LL},
+        {"GA918", "Garuda",     "DPS", "CGK", M(19, 0), 170, 1300000LL},
     };
 }
 
 // ---------------------- ANTARMUKA MENU ----------------------
 void tampilkanJalur(const vector<Flight>& data, const vector<int>& jalur) {
     cetakHeader();
-    long total = 0;
+    ll total = 0;
     int durasi = 0;
     for (int i : jalur) { cetakFlight(data[i]); total += data[i].harga; durasi += data[i].durasi; }
     cout << string(66, '-') << "\n";
@@ -265,26 +287,38 @@ int main() {
     JaringanRute jaringan;
     jaringan.bangun(data);
 
-    int pilih;
+    int pilih = -1;
     do {
         cout << "\n===== SISTEM PEMESANAN TIKET PESAWAT =====\n"
-                << "1. Tampilkan semua tiket\n"
-                << "2. Urutkan tiket (harga / waktu berangkat / durasi)\n"
-                << "3. Cari tiket langsung (kota asal & tujuan)\n"
-                << "4. Cari tiket berdasarkan kode penerbangan (Binary Search)\n"
-                << "5. Cari rute termurah (Graph - Dijkstra)\n"
-                << "6. Cari rute transit paling sedikit (Graph - BFS)\n"
-                << "7. Tampilkan jaringan rute\n"
-                << "0. Keluar\n"
-                << "Pilih menu: ";
-        if (!(cin >> pilih)) break;
+             << "1. Tampilkan semua tiket\n"
+             << "2. Urutkan tiket (harga / waktu berangkat / durasi)\n"
+             << "3. Cari tiket langsung (kota asal & tujuan)\n"
+             << "4. Cari tiket berdasarkan kode penerbangan (Binary Search)\n"
+             << "5. Cari rute termurah (Graph - Dijkstra)\n"
+             << "6. Cari rute transit paling sedikit (Graph - BFS)\n"
+             << "7. Tampilkan jaringan rute\n"
+             << "0. Keluar\n"
+             << "Pilih menu: ";
+        if (!(cin >> pilih)) {
+            if (cin.eof()) break;
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            cout << "Input harus berupa angka.\n";
+            pilih = -1;
+            continue;
+        }
 
         if (pilih == 1) {
             cetakDaftar(data);
         } else if (pilih == 2) {
             int k;
             cout << "Urutkan berdasarkan: 1) Harga  2) Waktu berangkat  3) Durasi : ";
-            cin >> k;
+            if (!(cin >> k)) {
+                cin.clear();
+                cin.ignore(numeric_limits<streamsize>::max(), '\n');
+                cout << "Pilihan tidak valid.\n";
+                continue;
+            }
             if (k < 1 || k > 3) { cout << "Pilihan tidak valid.\n"; continue; }
             vector<Flight> salinan = data;
             urutkan(salinan, k);
@@ -303,7 +337,7 @@ int main() {
             kode = upper(kode);
             vector<Flight> terurut = data;  // binary search butuh data terurut menurut kode
             mergeSort(terurut, 0, (int)terurut.size() - 1,
-                        [](const Flight& x, const Flight& y) { return x.kode < y.kode; });
+                      [](const Flight& x, const Flight& y) { return x.kode < y.kode; });
             int idx = binarySearchKode(terurut, kode);
             if (idx < 0) cout << "Kode " << kode << " tidak ditemukan.\n";
             else { cetakHeader(); cetakFlight(terurut[idx]); }
@@ -314,7 +348,7 @@ int main() {
             if (a == t) { cout << "Kota asal dan tujuan sama.\n"; continue; }
             vector<int> jalur;
             if (pilih == 5) {
-                long total;
+                ll total = 0;
                 jalur = jaringan.termurah(a, t, total);
                 cout << "\nRute termurah " << a << " -> " << t << ":\n";
             } else {
